@@ -1,0 +1,418 @@
+%===========================
+clc
+clf
+clear
+%type value
+EMPTY=0;
+EXIT=1;
+PEOPLE=2;
+BARRIER=3;
+DIRECTION_P=1;
+PEOPLE_P=0.029;
+
+direction=0;
+power=0.5;
+
+%initiate
+fileName='second floor';
+filePath=strcat('C:\\Users\\38230\\Desktop\\',fileName,'.xlsx');
+table=xlsread(filePath);
+statusCell=num2cell(table);
+
+exitFlag=0;
+%exit information
+exitCell={};
+row=size(table,1);
+col=size(table,2);
+for i=1:row
+    for j=1:col
+        switch(statusCell{i,j}(1))
+            case 0
+                statusCell{i,j}=[EMPTY,0];
+            case 1
+                exitFlag=exitFlag+1;
+                statusCell{i,j}=[EXIT,0,exitFlag];
+                exitCell{exitFlag}=[exitFlag,i,j];
+            case 3
+                statusCell{i,j}=[BARRIER,0];
+            case 4
+                statusCell{i,j}=[BARRIER,0];
+        end
+    end
+end
+
+peopleFlag=0;
+for i=1:row
+    for j=1:col
+        if(statusCell{i,j}==0)
+            seed=rand(1);
+            if(seed<PEOPLE_P)
+                statusCell{i,j}=[PEOPLE,0,i,j,0,power];
+                peopleFlag=peopleFlag+1;
+            end
+        end
+    end
+end
+%people information
+PEOPLENUM=peopleFlag;%总人数
+outPutName=strcat(fileName,num2str(PEOPLENUM));
+outPutFile=strcat(outPutName,'.txt');
+exitTxtName=strcat(fileName,num2str(PEOPLENUM),'EXIT');
+exitOutPutFile=strcat(exitTxtName,'.txt');
+ESCAPENUM=0;%成功逃生人数
+
+%model set
+offX=[-1,-1,-1,0,1,1,1,0];
+offY=[1,0,-1,-1,-1,0,1,1];
+%===========================
+%GUI
+statusFigure=figure(1);
+plotbutton=uicontrol('parent',statusFigure, ...
+'style','pushbutton',...
+'string','Run', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[3.5,16,2,1], ...
+'callback', 'run=1;');
+% stop
+erasebutton=uicontrol('parent',statusFigure, ...
+'style','pushbutton',...
+'string','Stop', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[10.5,16,2,1], ...
+'callback','freeze=1;');
+% Quit
+quitbutton=uicontrol('parent',statusFigure, ...
+'style','pushbutton',...
+'string','Quit', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[17.5,16,2,1], ...
+'callback','fclose(peopleFile);fclose(exitFile);stop=1;clear;close;');
+% max step
+maxNameText1 = uicontrol('parent',statusFigure, ...
+'style','text', ...
+'string','Maximum Iterations', ...
+'fontsize',12, ...
+'HorizontalAlignment','center', ...
+'unit','centimeters', ...
+'position',[21.5,17,8,1]);
+% max step
+maxText = uicontrol('parent',statusFigure, ...
+'style','edit', ...
+'string','20000', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[24.5,16,2,1]);
+%step
+nameText1 = uicontrol('parent',statusFigure, ...
+'style','text', ...
+'string','Step Number', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[27.5,17,5,1]);
+%step
+stepText = uicontrol('parent',statusFigure, ...
+'style','text', ...
+'string','0', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[32.5,17,1.5,1]);
+%escape
+nameText2 = uicontrol('parent',statusFigure, ...
+'style','text', ...
+'string','Escape Number', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[27.5,16,5,1]);
+%escape
+escapeText = uicontrol('parent',statusFigure, ...
+'style','text', ...
+'string','0', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[32.5,16,1.5,1]);
+%remain
+nameText3 = uicontrol('parent',statusFigure, ...
+'style','text', ...
+'string','Remaining Number', ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[27.5,15,5,1]);
+%remain
+remainText = uicontrol('parent',statusFigure, ...
+'style','text', ...
+'string',num2str(PEOPLENUM), ...
+'fontsize',12, ...
+'unit','centimeters', ...
+'position',[32.5,15,1.5,1]);
+%colormap
+colorMap=[
+1,1,1;%空白
+0.24,0.75,0.71;%出口
+0,0.47,0.84;%人
+0.25,0.25,0.25%背景
+];
+colormap(colorMap);
+%image value set
+statusImg=zeros(row,col);
+for i=1:row
+    for j=1:col
+        switch(statusCell{i,j}(1))
+            case EMPTY
+                statusImg(i,j)=1;
+            case EXIT
+                statusImg(i,j)=2;
+            case BARRIER
+                statusImg(i,j)=4;
+            case PEOPLE
+                statusImg(i,j)=3;
+        end
+    end  
+end
+imageHandle = image(statusImg);
+set(gcf,'unit','centimeters','position',[2,2,36,18]);
+set(gca,'unit','centimeters','position',[2,1,32,14]);
+
+%===========================
+%start compute
+stop= 0;     
+run = 0;     
+freeze = 0;  % wait for a freeze
+peopleFile=fopen(outPutFile,'w');
+exitFile=fopen(exitOutPutFile,'w');
+fprintf(peopleFile,'People=%d\n',PEOPLENUM);
+fprintf(peopleFile,'0 %d %d\n',ESCAPENUM,PEOPLENUM-ESCAPENUM);
+while (stop==0)
+    maxStep = str2num(get(maxText,'string'));
+    step = str2num(get(stepText,'string'));
+    if (run==1)
+        if(step<maxStep)
+            %===========================
+            %1.flow direction
+            flowCell=statusCell;
+            for i=1:row
+                for j=1:col
+                    if(flowCell{i,j}(1)==PEOPLE)
+                        exitDis=zeros(1,length(exitCell));
+                        for k=1:length(exitCell)
+                            exitX=exitCell{k}(2);
+                            exitY=exitCell{k}(3);
+                            distance=sqrt((i-exitX).^2+(j-exitY).^2);
+                            exitDis(k)=distance;
+                        end
+                        [dis,id]=min(exitDis);
+                        exitChoice=id;
+                        cellDis=[inf,inf,inf,inf,inf,inf,inf,inf];
+                        for m=1:length(cellDis)
+                            cellX=i+offX(m);
+                            cellY=j+offY(m);
+                            if(flowCell{cellX,cellY}(1)==BARRIER)
+                                continue;
+                            end
+                            if ((cellX < 1) || (cellX > row)||(cellY < 1) || (cellY > col))
+                                continue;
+                            end
+                            distance=sqrt((cellX-exitCell{exitChoice}(2)).^2+(cellY-exitCell{exitChoice}(3)).^2);
+                            cellDis(m)=distance;
+                        endDis);
+                        cellDis(id1)=max(cellDis);
+                        [dis2,id2]=min(cellDis);
+                        p=rand(1);
+                        if(p<DIRECTION_P)
+                                cellChoice=id1;
+                                flowCell{i,j}(5)=cellChoice;
+                        else
+                                cellChoice=id2;
+                                flowCell{i,j}(5)=cellChoice;
+                        end
+                        cellDis=[inf,inf,inf,inf,inf,inf,inf,inf];
+                    end
+                end
+            end
+            %===========================
+            %2.produce X element
+            flowCell_2=flowCell;
+            for i=1:row
+                for j=1:col
+                    if(flowCell{i,j}(1)~=BARRIER)
+                        candidate=zeros(1,8);
+                        flag=0;
+                        for n=1:8
+                            cellX=i+offX(n);
+                            cellY=j+offY(n);
+                            if ((cellX < 1) || (cellX > row)||(cellY < 1) || (cellY > col))
+                                continue;
+                            end
+                            if (flowCell{cellX,cellY}(1)==PEOPLE)
+                                if((flowCell{cellX,cellY}(5)==8)&(n==4))
+                                    candidate(n)=flowCell{cellX,cellY}(6);
+                                    flag=1;
+                                end
+                                if((flowCell{cellX,cellY}(5)==mod(n+4,8)))
+                                    candidate(n)=flowCell{cellX,cellY}(6);
+                                    flag=1;
+                                end
+                            end
+                        end
+                        if(flag~=0)
+                            [power,id]=max(candidate);
+                            cellChoice=id;
+                            for k=1:8
+                                if(k~=cellChoice & candidate(k)~=0)
+                                    cellX=i+offX(k);
+                                    cellY=j+offY(k);
+                                    flowCell_2{cellX,cellY}(5)=-1;
+                                    flowCell_2{cellX,cellY}(2)=-1;
+                                end
+                            end
+                        end
+                    end
+                    candidate=zeros(1,8);
+                end
+            end
+            %===========================
+            %3.solve extra X element
+            start=1;
+            flowCell_n=flowCell_2;
+            flowCell_o=flowCell_2;
+            while(start==1)
+                findingStop=0;
+                for i=1:row
+                    for j=1:col
+                        if((flowCell_o{i,j}(1)==PEOPLE) & (flowCell_o{i,j}(5)==-1)
+                            for n=1:8
+                                cellX=i+offX(n);
+                                cellY=j+offY(n);
+                                if ((cellX < 1) || (cellX > row)||(cellY < 1) || (cellY > col))
+                                    continue;
+                                end
+                                if (flowCell_o{cellX,cellY}(1)==PEOPLE)
+                                    if((flowCell_o{cellX,cellY}(5)==8)&(n==4))
+                                        flowCell_n{cellX,cellY}(5)=-1;
+                                        flowCell_n{cellX,cellY}(2)=-1;
+                                        findingStop=findingStop+1;
+                                    end
+                                    if((flowCell_o{cellX,cellY}(5)==mod(n+4,8)))
+                                        flowCell_n{cellX,cellY}(5)=-1;
+                                        flowCell_n{cellX,cellY}(2)=-1;
+                                        findingStop=findingStop+1;
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                flowCell_o=flowCell_n;
+                if(findingStop==0)
+                    start=0;
+                end
+            end
+            %===========================
+            %4.link cells
+            flowCell_4=flowCell_n;
+            for i=1:row
+                for j=1:col
+                    if(flowCell_n{i,j}(1)~=BARRIER)
+                        if(i==4&j==15)
+                            a=1;
+                        end
+                        for n=1:8
+                            cellX=i+offX(n);
+                            cellY=j+offY(n);
+                            if ((cellX < 1) || (cellX > row)||(cellY < 1) || (cellY > col))
+                                continue;
+                            end
+                            if (flowCell_n{cellX,cellY}(1)==PEOPLE)
+                                if((flowCell_n{cellX,cellY}(5)==8)&(n==4))
+                                    flowCell_4{i,j}(2)=n;
+                                end
+                                if((flowCell_n{cellX,cellY}(5)==mod(n+4,8)))
+                                    flowCell_4{i,j}(2)=n;
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            %===========================
+            %5.refresh matrix
+            newStatusCell=flowCell_4;
+            for i=1:row
+                for j=1:col
+                    switch( flowCell_4{i,j}(1))
+                        case EXIT
+                            if(flowCell_4{i,j}(2)>0)
+                                ESCAPENUM=ESCAPENUM+1;
+                                fprintf(exitFile,'%d\n',flowCell_4{i,j}(3));
+                                newStatusCell{i,j}(2)=0;
+                            end
+                        case BARRIER
+                            continue;
+                        case EMPTY
+                            id=flowCell_4{i,j}(2);
+                            if(id>0)
+                                cellX=i+offX(id);
+                                cellY=j+offY(id);
+                                newStatusCell{i,j}=flowCell_4{cellX,cellY};
+                                newStatusCell{i,j}(2)=0;
+                                newStatusCell{i,j}(5)=0;
+                            end
+                        case PEOPLE
+                            id=flowCell_4{i,j}(2);
+                            if(id==-1)
+                                newStatusCell{i,j}=flowCell_4{i,j};
+                                newStatusCell{i,j}(2)=0;
+                                newStatusCell{i,j}(5)=0;
+                            elseif(id==0)
+                                newStatusCell{i,j}=[EMPTY,0];
+                            else
+                                cellX=i+offX(id);
+                                cellY=j+offY(id);
+                                flowCell_n{cellX,cellY}(5)=0;
+                                newStatusCell{i,j}=flowCell_4{cellX,cellY};
+                                newStatusCell{i,j}(2)=0;
+                                newStatusCell{i,j}(5)=0;
+                            end
+                    end
+                end
+            end
+            statusCell=newStatusCell;
+            %===========================
+            %refresh image
+            for i=1:row
+                for j=1:col
+                    if(statusCell{i,j}(1)==EMPTY)
+                        statusImg(i,j)=1;
+                    elseif(statusCell{i,j}(1)==EXIT)
+                        statusImg(i,j)=2;
+                    elseif(statusCell{i,j}(1)==BARRIER)
+                        statusImg(i,j)=4;
+                    else
+                        statusImg(i,j)=3;
+                    end
+                end
+            end
+            set(imageHandle, 'cdata',statusImg);
+            step=step+1;
+            set(stepText,'string',num2str(step));
+            set(escapeText,'string',num2str(ESCAPENUM));
+            set(remainText,'string',num2str(PEOPLENUM-ESCAPENUM));
+            fprintf(peopleFile,'%d %d %d\n',step,ESCAPENUM,PEOPLENUM-ESCAPENUM);
+            fprintf(exitFile,'step=%d\n',step);
+            if(PEOPLENUM-ESCAPENUM==0)
+               fprintf(peopleFile,'step=%d\n',step);
+               freeze=1; 
+            end
+        else
+            freeze=1;
+        end
+    end
+    if (freeze==1)
+        run = 0;
+        freeze = 0;
+    end
+    drawnow
+end
+
